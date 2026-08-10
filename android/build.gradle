@@ -1,0 +1,82 @@
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.1.0"
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0"
+  }
+}
+
+// ─── Fix #1: Apply the React Native Gradle plugin FIRST ──────────────────────
+// This is required for Codegen to run and generate the TurboModule C++/Java
+// bindings. Without it, JSI linking fails silently on New Architecture.
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'com.facebook.react'
+
+android {
+  compileSdkVersion 36
+  namespace "com.gliphplayer"
+
+  defaultConfig {
+    minSdkVersion 24
+    targetSdkVersion 36
+    buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = "17"
+  }
+
+  sourceSets {
+    main {
+      if (!isNewArchitectureEnabled()) {
+        // Old Architecture: use the hand-written spec that does NOT implement TurboModule
+        java.srcDirs += ["src/oldarch"]
+      }
+    }
+  }
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.20"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"
+
+  // ExoPlayer (Media3)
+  implementation "androidx.media3:media3-exoplayer:1.3.1"
+  implementation "androidx.media3:media3-exoplayer-hls:1.3.1"
+  implementation "androidx.media3:media3-exoplayer-dash:1.3.1"
+  implementation "androidx.media3:media3-exoplayer-smoothstreaming:1.3.1"
+  implementation "androidx.media3:media3-session:1.3.1"
+  implementation "androidx.media3:media3-ui:1.3.1"
+  implementation "androidx.media3:media3-datasource-okhttp:1.3.1"
+
+  // OkHttp for custom headers
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
+
+  // AndroidX
+  implementation "androidx.core:core-ktx:1.12.0"
+  implementation "androidx.media:media:1.7.0"
+}
+
+def isNewArchitectureEnabled() {
+  return project.hasProperty("newArchEnabled") && project.newArchEnabled == "true"
+}

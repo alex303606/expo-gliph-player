@@ -1,0 +1,46 @@
+{
+  "name": "expo-gliph-player",
+  "version": "1.0.0",
+  "description": "Fixed version of react-native-gliph-player with Expo compatibility",
+  "main": "app.plugin.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/src/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "keywords": [
+    "expo",
+    "react-native",
+    "gliph-player",
+    "audio",
+    "music",
+    "player",
+    "expo-plugin"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": ">=50.0.0",
+    "react": "*",
+    "react-native": ">=0.71.0"
+  },
+  "dependencies": {
+    "@expo/config-plugins": ">=7.0.0"
+  },
+  "files": [
+    "app.plugin.js",
+    "src",
+    "ios",
+    "android",
+    "lib",
+    "*.podspec",
+    "LICENSE",
+    "README.md"
+  ],
+  "codegenConfig": {
+    "name": "RNGliphPlayerSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "com.gliphplayer"
+    }
+  }
+}
