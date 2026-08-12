@@ -1,5 +1,9 @@
 {
   "name": "expo-gliph-player",
+  "author": {
+    "name": "Aleksey Ostrikov",
+    "email": "alex303606@gmail.com"
+  },
   "version": "1.0.0",
   "description": "Fixed version of react-native-gliph-player with Expo compatibility",
   "main": "app.plugin.js",

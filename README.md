@@ -1,7 +1,7 @@
 # 🎵 expo-gliph-player
 
-[![npm version](https://shields.io)](https://npmjs.com)
-[![License: MIT](https://shields.io)](https://opensource.org)
+[![npm version](https://img.shields.io/npm/v/expo-gliph-player)](https://www.npmjs.com/package/expo-gliph-player)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Fixed version of react-native-gliph-player with full Expo compatibility.** All iOS bridge fixes, Swift/Objective-C issues, and Android `autoSkipOnError` patches are pre-applied.
 
