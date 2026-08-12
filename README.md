@@ -18,7 +18,7 @@ yarn add expo-gliph-player
 ### From GitHub (Alternative):
 
 ```bash
-yarn add https://github.com
+yarn add https://github.com/alex303606/expo-gliph-player
 ```
 
 ---
