@@ -220,8 +220,8 @@ export interface PlayerOptions {
   /** Android-specific options */
   android?: {
     appKilledPlaybackBehavior?: AppKilledPlaybackBehavior;
-    audioContentType?: AndroidAudioContentType;
-    audioUsage?: AndroidAudioUsage;
+    audioContentType?: AndroidAudioContentType | string;
+    audioUsage?: AndroidAudioUsage | string;
     autoSkipOnError?: boolean;
   };
   /** Progress update interval in seconds */
