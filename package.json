@@ -27,7 +27,8 @@
     "react-native": ">=0.71.0"
   },
   "dependencies": {
-    "@expo/config-plugins": ">=7.0.0"
+    "@expo/config-plugins": ">=7.0.0",
+    "expo-gliph-player": "^1.0.1"
   },
   "files": [
     "app.plugin.js",

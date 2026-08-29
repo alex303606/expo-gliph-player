@@ -8,8 +8,6 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = function withGliphPlayer(config) {
-    console.log('🔧 Starting expo-gliph-player plugin...');
-
     // ===== iOS: Info.plist =====
     config = withInfoPlist(config, (config) => {
         if (!config.modResults.UIBackgroundModes) {
