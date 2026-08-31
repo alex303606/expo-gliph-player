@@ -43,6 +43,22 @@ public typealias EventEmitter = (String, [String: Any]?) -> Void
     super.init()
   }
 
+  // ── Thread helper ───────────────────────────────────────────────────────────
+
+  /// Executes `block` synchronously on the main thread.
+  /// Safe to call from any thread — avoids deadlock if already on main.
+  /// Several AVAudioSession / UIApplication / MPRemoteCommandCenter APIs are
+  /// documented as main-thread-only; the RN bridge does not guarantee that
+  /// native module methods run on main, so every touch of those APIs goes
+  /// through this helper.
+  private func runOnMain(_ block: () -> Void) {
+    if Thread.isMainThread {
+      block()
+    } else {
+      DispatchQueue.main.sync(execute: block)
+    }
+  }
+
   // ── Setup ───────────────────────────────────────────────────────────────────
 
   @objc public func setupPlayer(
@@ -52,29 +68,39 @@ public typealias EventEmitter = (String, [String: Any]?) -> Void
   ) {
     guard !isSetup else { resolve(nil); return }
 
-    self.options = options
-    self.progressInterval = (options["progressUpdateEventInterval"] as? Double) ?? 1.0
+    var setupError: Error?
 
-    do {
-      let session = AVAudioSession.sharedInstance()
-      let category = mapIOSCategory(options["iosCategory"] as? String)
-      let mode = mapIOSMode(options["iosCategoryMode"] as? String)
-      let opts = mapIOSOptions(options["iosCategoryOptions"] as? [String])
+    runOnMain {
+      self.options = options
+      self.progressInterval = (options["progressUpdateEventInterval"] as? Double) ?? 1.0
 
-      try session.setCategory(category, mode: mode, options: opts)
-      try session.setActive(true)
-    } catch {
+      do {
+        let session = AVAudioSession.sharedInstance()
+        let category = self.mapIOSCategory(options["iosCategory"] as? String)
+        let mode = self.mapIOSMode(options["iosCategoryMode"] as? String)
+        let opts = self.mapIOSOptions(options["iosCategoryOptions"] as? [String])
+
+        try session.setCategory(category, mode: mode, options: opts)
+        try session.setActive(true)
+      } catch {
+        setupError = error
+        return
+      }
+
+      self.player = AVQueuePlayer()
+      self.player?.allowsExternalPlayback = false
+      self.player?.automaticallyWaitsToMinimizeStalling = (options["waitForBuffer"] as? Bool) ?? true
+
+      self.setupRemoteCommands()
+      self.setupNotificationObservers()
+      self.isSetup = true
+    }
+
+    if let error = setupError {
       reject("setup_error", "Failed to configure audio session: \(error.localizedDescription)", error)
       return
     }
 
-    player = AVQueuePlayer()
-    player?.allowsExternalPlayback = false
-    player?.automaticallyWaitsToMinimizeStalling = (options["waitForBuffer"] as? Bool) ?? true
-
-    setupRemoteCommands()
-    setupNotificationObservers()
-    isSetup = true
     resolve(nil)
   }
 
@@ -89,7 +115,9 @@ public typealias EventEmitter = (String, [String: Any]?) -> Void
     currentIndex = -1
     isSetup = false
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-    UIApplication.shared.endReceivingRemoteControlEvents()
+    runOnMain {
+      UIApplication.shared.endReceivingRemoteControlEvents()
+    }
   }
 
   @objc public func isReady() -> Bool { return isSetup }
@@ -345,7 +373,9 @@ public typealias EventEmitter = (String, [String: Any]?) -> Void
     reject: @escaping RCTPromiseRejectBlock
   ) {
     options = opts
-    setupRemoteCommands()
+    runOnMain {
+      self.setupRemoteCommands()
+    }
     resolve(nil)
   }
 
@@ -426,6 +456,10 @@ public typealias EventEmitter = (String, [String: Any]?) -> Void
 
   // ── Remote commands ─────────────────────────────────────────────────────────
 
+  /// Must always be called on the main thread (see `runOnMain` call sites:
+  /// `setupPlayer` and `updateOptions`). `MPRemoteCommandCenter` and
+  /// `UIApplication.beginReceivingRemoteControlEvents()` are main-thread-only
+  /// APIs.
   private func setupRemoteCommands() {
     let center = MPRemoteCommandCenter.shared()
     UIApplication.shared.beginReceivingRemoteControlEvents()
