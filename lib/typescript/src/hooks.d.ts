@@ -1,5 +1,5 @@
 /**
- * hooks.ts — React hooks for react-native-gliph-player
+ * hooks.ts — React hooks for expo-gliph-player
  */
 import { Event } from './types';
 import type { Track, Progress, PlaybackState, RepeatMode, EventPayloadByEvent } from './types';

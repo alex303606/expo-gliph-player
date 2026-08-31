@@ -6,6 +6,17 @@ import UIKit
 
 public typealias EventEmitter = (String, [String: Any]?) -> Void
 
+// React Native's promise block types, redeclared locally so this file has
+// no dependency on a bridging header (`import <React/RCTBridgeModule.h>`).
+// Bridging headers are unsupported on framework targets in Xcode, and this
+// pod builds as a static_framework — so this file must never `import React`
+// or rely on one being injected. These signatures are structurally
+// identical to the real `RCTPromiseResolveBlock` / `RCTPromiseRejectBlock`
+// (id -> Any?, NSString* -> String?, NSError* -> Error?), so the resulting
+// @objc blocks are ABI-compatible with what GliphPlayerModule.mm expects.
+public typealias RCTPromiseResolveBlock = (Any?) -> Void
+public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
+
 // MARK: - GliphAudioPlayer
 
 /**

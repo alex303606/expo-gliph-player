@@ -1,5 +1,5 @@
 /**
- * types.ts — Public TypeScript types for react-native-gliph-player
+ * types.ts — Public TypeScript types for expo-gliph-player
  */
 
 // ─── Track ───────────────────────────────────────────────────────────────────

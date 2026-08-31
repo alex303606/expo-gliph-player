@@ -58,7 +58,16 @@ Pod::Spec.new do |s|
   s.header_dir = "expo_gliph_player"
 
   s.public_header_files = "ios/GliphAudioPlayer.h", "ios/expo_gliph_player.h"
-  s.private_header_files = "ios/GliphPlayerModule.h", "ios/GliphPlayer-Bridging-Header.h"
+  s.private_header_files = "ios/GliphPlayerModule.h"
+
+  # ios/GliphPlayer-Bridging-Header.h must not exist in this pod at all —
+  # CocoaPods auto-detects any file matching *-Bridging-Header.h in
+  # source_files and wires up SWIFT_OBJC_BRIDGING_HEADER for it
+  # automatically, regardless of whether it's listed here. Bridging headers
+  # are unsupported on framework targets in Xcode, and s.static_framework
+  # above makes this a framework target, so the file itself was deleted
+  # (see GliphAudioPlayer.swift's local RCTPromiseResolveBlock /
+  # RCTPromiseRejectBlock typealiases, which replace what it used to expose).
 
   install_modules_dependencies(s)
 

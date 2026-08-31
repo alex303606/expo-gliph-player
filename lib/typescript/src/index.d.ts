@@ -1,5 +1,5 @@
 /**
- * react-native-gliph-player
+ * expo-gliph-player
  * Public API entry point
  */
 export { default } from './GliphPlayer';

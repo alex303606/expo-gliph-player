@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
 
 ## 💻 Complete Integration
 
-Let's put the pieces together. Using react-native-gliph-player requires two steps: initializing the background service, and then actually rendering your UI.
+Let's put the pieces together. Using expo-gliph-player requires two steps: initializing the background service, and then actually rendering your UI.
 
 ### Step 1: Setting up the Player
 
@@ -203,7 +203,7 @@ You should initialize the player as soon as your app mounts (usually in App.tsx)
 ```tsx
 import React, { useEffect } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
-import GliphPlayer, { Capability, AppKilledPlaybackBehavior } from 'react-native-gliph-player';
+import GliphPlayer, { Capability, AppKilledPlaybackBehavior } from 'expo-gliph-player';
 
 const myTracks = [
     {
@@ -262,7 +262,7 @@ Now that the player is initialized, you can control it from anywhere in your app
 Building play, pause, next, and previous buttons is straightforward. All commands are async promises.
 
 ```tsx
-import GliphPlayer from 'react-native-gliph-player';
+import GliphPlayer from 'expo-gliph-player';
 import { TouchableOpacity, Text, View } from 'react-native';
 
 export function PlayerControls() {
@@ -351,7 +351,7 @@ Instead of manually fetching state, Gliph Player ships with powerful React Hooks
 The useIsPlaying() hook makes it incredibly easy to toggle a play/pause icon.
 
 ```tsx
-import GliphPlayer, { useIsPlaying } from 'react-native-gliph-player';
+import GliphPlayer, { useIsPlaying } from 'expo-gliph-player';
 import { TouchableOpacity, Text } from 'react-native';
 
 export function PlayPauseButton() {
@@ -378,7 +378,7 @@ export function PlayPauseButton() {
 The useProgress() hook returns the current position and duration. It updates automatically so your slider moves smoothly in real-time.
 
 ```tsx
-import GliphPlayer, { useProgress } from 'react-native-gliph-player';
+import GliphPlayer, { useProgress } from 'expo-gliph-player';
 import Slider from '@react-native-community/slider';
 
 export function ProgressBar() {
@@ -403,7 +403,7 @@ export function ProgressBar() {
 The useActiveTrack() hook returns the data for the song currently playing. It changes automatically when a song skips.
 
 ```tsx
-import { useActiveTrack } from 'react-native-gliph-player';
+import { useActiveTrack } from 'expo-gliph-player';
 import { View, Image, Text } from 'react-native';
 
 export function NowPlaying() {
