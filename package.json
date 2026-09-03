@@ -4,7 +4,7 @@
     "name": "Aleksey Ostrikov",
     "email": "alex303606@gmail.com"
   },
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "Fixed version of react-native-gliph-player with Expo compatibility",
   "main": "app.plugin.js",
   "module": "lib/module/index.js",
