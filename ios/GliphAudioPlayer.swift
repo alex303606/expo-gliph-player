@@ -6,29 +6,12 @@ import UIKit
 
 public typealias EventEmitter = (String, [String: Any]?) -> Void
 
-// React Native's promise block types, redeclared locally so this file has
-// no dependency on a bridging header (`import <React/RCTBridgeModule.h>`).
-// Bridging headers are unsupported on framework targets in Xcode, and this
-// pod builds as a static_framework — so this file must never `import React`
-// or rely on one being injected. These signatures are structurally
-// identical to the real `RCTPromiseResolveBlock` / `RCTPromiseRejectBlock`
-// (id -> Any?, NSString* -> String?, NSError* -> Error?), so the resulting
-// @objc blocks are ABI-compatible with what GliphPlayerModule.mm expects.
+// React Native's promise block types
 public typealias RCTPromiseResolveBlock = (Any?) -> Void
 public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
 // MARK: - GliphAudioPlayer
 
-/**
- * GliphAudioPlayer
- *
- * Core Swift class that manages:
- *   - AVQueuePlayer for audio playback
- *   - MPRemoteCommandCenter for lock screen / headphone controls
- *   - MPNowPlayingInfoCenter for Now Playing metadata
- *   - Audio session configuration
- *   - Queue management
- */
 @objc public class GliphAudioPlayer: NSObject {
 
   // ── Properties ──────────────────────────────────────────────────────────────
@@ -37,7 +20,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   private var playerItems: [AVPlayerItem] = []
   private var queue: [[String: Any]] = []
   private var currentIndex: Int = -1
-  private var repeatMode: Int = 0  // 0=off, 1=track, 2=queue
+  private var repeatMode: Int = 0
   private var isSetup = false
   private var progressTimer: Timer?
   private var progressInterval: TimeInterval = 1.0
@@ -56,12 +39,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   // ── Thread helper ───────────────────────────────────────────────────────────
 
-  /// Executes `block` synchronously on the main thread.
-  /// Safe to call from any thread — avoids deadlock if already on main.
-  /// Several AVAudioSession / UIApplication / MPRemoteCommandCenter APIs are
-  /// documented as main-thread-only; the RN bridge does not guarantee that
-  /// native module methods run on main, so every touch of those APIs goes
-  /// through this helper.
   private func runOnMain(_ block: () -> Void) {
     if Thread.isMainThread {
       block()
@@ -145,11 +122,19 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       ? queue.count
       : insertBeforeIndex
 
+    let wasEmpty = queue.isEmpty
+
     for (i, track) in tracks.enumerated() {
       queue.insert(track, at: insertAt + i)
     }
 
     rebuildPlayerQueue()
+
+    if wasEmpty && !queue.isEmpty {
+      currentIndex = 0
+      emitActiveTrackChanged()
+    }
+
     resolve(insertAt)
   }
 
@@ -183,12 +168,18 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     guard index >= 0 && index < queue.count else {
       reject("skip_error", "Index out of bounds", nil); return
     }
+
+    let lastIndex = currentIndex
     currentIndex = index
+
     rebuildPlayerQueue()
     if initialPosition >= 0 {
       player?.seek(to: CMTime(seconds: initialPosition, preferredTimescale: 1000))
     }
     player?.play()
+
+    emitActiveTrackChanged(lastIndex: lastIndex)
+
     resolve(nil)
   }
 
@@ -237,11 +228,19 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   @objc public func play(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     player?.play()
     startProgressTimer()
+
+    eventEmitter("playback-state", ["state": "playing"])
+
+    if currentIndex >= 0 && currentIndex < queue.count {
+      emitActiveTrackChanged()
+    }
+
     resolve(nil)
   }
 
   @objc public func pause(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     player?.pause()
+    eventEmitter("playback-state", ["state": "paused"])
     resolve(nil)
   }
 
@@ -249,6 +248,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     player?.pause()
     player?.seek(to: .zero)
     stopProgressTimer()
+    eventEmitter("playback-state", ["state": "stopped"])
     resolve(nil)
   }
 
@@ -257,9 +257,19 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     player?.removeAllItems()
     queue.removeAll()
     playerItems.removeAll()
+    let lastIndex = currentIndex
     currentIndex = -1
     stopProgressTimer()
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+
+    eventEmitter("playback-active-track-changed", [
+      "index": -1,
+      "track": NSNull(),
+      "lastIndex": lastIndex,
+      "lastPosition": 0.0,
+    ] as [String : Any])
+    eventEmitter("playback-state", ["state": "none"])
+
     resolve(nil)
   }
 
@@ -392,6 +402,18 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
+  private func emitActiveTrackChanged(lastIndex: Int = -1) {
+    let lastPos = CMTimeGetSeconds(player?.currentTime() ?? .zero)
+    let track = (currentIndex >= 0 && currentIndex < queue.count) ? queue[currentIndex] : nil
+
+    eventEmitter("playback-active-track-changed", [
+      "index": currentIndex,
+      "track": track as Any,
+      "lastIndex": lastIndex >= 0 ? lastIndex : currentIndex,
+      "lastPosition": lastPos,
+    ])
+  }
+
   private func rebuildPlayerQueue() {
     guard let player = player else { return }
     player.removeAllItems()
@@ -407,7 +429,9 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       player.insert(item, after: player.items().last)
     }
 
-    if currentIndex < 0 && !queue.isEmpty { currentIndex = 0 }
+    if currentIndex < 0 && !queue.isEmpty {
+      currentIndex = 0
+    }
     updateNowPlayingInfo()
   }
 
@@ -430,7 +454,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = CMTimeGetSeconds(player?.currentTime() ?? .zero)
     info[MPNowPlayingInfoPropertyPlaybackRate] = player?.rate ?? 0.0
 
-    // Artwork
     if let artworkURL = track["artwork"] as? String, !artworkURL.isEmpty {
       loadArtwork(from: artworkURL) { image in
         if let image = image {
@@ -467,10 +490,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   // ── Remote commands ─────────────────────────────────────────────────────────
 
-  /// Must always be called on the main thread (see `runOnMain` call sites:
-  /// `setupPlayer` and `updateOptions`). `MPRemoteCommandCenter` and
-  /// `UIApplication.beginReceivingRemoteControlEvents()` are main-thread-only
-  /// APIs.
   private func setupRemoteCommands() {
     let center = MPRemoteCommandCenter.shared()
     UIApplication.shared.beginReceivingRemoteControlEvents()
@@ -588,7 +607,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       object: nil
     )
 
-    // Observe player status
     if let player = player {
       let obs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
         self?.eventEmitter("playback-state", ["state": self?.currentStateString() ?? "none"])
@@ -609,16 +627,19 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   }
 
   @objc private func playerItemDidFinish(_ notification: Notification) {
-    // Only react to notifications for our own player's current item —
-    // `object: nil` on the observer means this fires for *any* AVPlayerItem
-    // in the whole app (e.g. a video player elsewhere), so we must filter here.
     guard let finishedItem = notification.object as? AVPlayerItem,
           finishedItem === player?.currentItem else { return }
 
     let nextIndex = currentIndex + 1
+    let currentPosition = CMTimeGetSeconds(player?.currentTime() ?? .zero)
+
+    // ✅ 1. Отправляем событие окончания ТЕКУЩЕГО трека
+    eventEmitter("playback-track-ended", [
+      "index": currentIndex,
+      "position": currentPosition
+    ])
 
     if repeatMode == 1 {
-      // Repeat current track
       player?.seek(to: .zero)
       player?.play()
       return
@@ -634,14 +655,16 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
         "lastPosition": 0.0,
       ])
     } else if repeatMode == 2 {
-      // Repeat queue
       currentIndex = 0
       rebuildPlayerQueue()
       player?.play()
+      if !queue.isEmpty {
+        emitActiveTrackChanged()
+      }
     } else {
       eventEmitter("playback-queue-ended", [
         "index": currentIndex,
-        "position": CMTimeGetSeconds(player?.currentTime() ?? .zero),
+        "position": currentPosition,
       ])
     }
   }
@@ -677,7 +700,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   @objc private func audioRouteChanged(_ notification: Notification) {
     guard let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
           let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-    // Pause on headphone unplug (standard iOS behavior)
     if reason == .oldDeviceUnavailable { player?.pause() }
   }
 

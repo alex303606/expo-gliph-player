@@ -37,6 +37,7 @@ RCT_EXPORT_MODULE(RNGliphPlayer)
     @"playback-state",
     @"playback-error",
     @"playback-active-track-changed",
+    @"playback-track-ended",
     @"playback-queue-ended",
     @"playback-progress-updated",
     @"playback-metadata-received",

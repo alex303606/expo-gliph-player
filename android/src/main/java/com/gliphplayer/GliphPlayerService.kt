@@ -52,16 +52,12 @@ class GliphPlayerService : MediaLibraryService() {
   private val binder = LocalBinder()
 
   override fun onBind(intent: Intent?): IBinder? {
-    // MediaLibraryService.onBind handles media browser connections.
-    // For our local binding from GliphPlayerModule, we return our LocalBinder.
-    // We must check the action to distinguish the two callers.
     val action = intent?.action
     if (action == null ||
         action == "com.gliphplayer.BIND_LOCAL" ||
         action == Intent.ACTION_MAIN) {
       return binder
     }
-    // Let MediaLibraryService handle MediaBrowser / MediaSession connections
     return super.onBind(intent)
   }
 
@@ -75,7 +71,6 @@ class GliphPlayerService : MediaLibraryService() {
   private var progressJob: Job? = null
   private var options: ReadableMap? = null
 
-  // Internal queue (mirrors ExoPlayer's playlist)
   private val queue = java.util.Collections.synchronizedList(mutableListOf<ReadableMap>())
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -96,7 +91,6 @@ class GliphPlayerService : MediaLibraryService() {
 
   override fun onCreate() {
     super.onCreate()
-    // 1. Create high-importance notification channel
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
       val channel = android.app.NotificationChannel(
         CHANNEL_ID,
@@ -111,7 +105,6 @@ class GliphPlayerService : MediaLibraryService() {
       manager.createNotificationChannel(channel)
     }
 
-    // 2. Immediate Foregrounding with a safe system icon
     val initialNotification = NotificationCompat.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_media_play)
       .setContentTitle("Gliph Player")
@@ -126,7 +119,6 @@ class GliphPlayerService : MediaLibraryService() {
       startForeground(NOTIFICATION_ID, initialNotification)
     }
 
-    // 3. Initialize player
     initPlayer()
   }
 
@@ -171,15 +163,6 @@ class GliphPlayerService : MediaLibraryService() {
   // ── Init ────────────────────────────────────────────────────────────────────
 
   private fun initPlayer(opts: ReadableMap? = null) {
-    // ── Fix #4: Buffer values from JS are in SECONDS (Double).
-    // ExoPlayer's DefaultLoadControl expects MILLISECONDS (Long).
-    // We convert here so callers never accidentally buffer for 1000 seconds.
-    //
-    // JS API contract (all values in seconds):
-    //   minBuffer    — minimum seconds to buffer before playback starts (default 15s)
-    //   maxBuffer    — maximum seconds to buffer ahead (default 50s)
-    //   playBuffer   — seconds buffered before playback resumes after stall (default 2.5s)
-    //   backBuffer   — seconds of audio to keep behind current position (default 0s)
     val minBufferMs  = (getDouble(opts, "minBuffer", 15.0)  * 1000).toInt()
     val maxBufferMs  = (getDouble(opts, "maxBuffer", 50.0)  * 1000).toInt()
     val playBufferMs = (getDouble(opts, "playBuffer", 2.5)   * 1000).toInt()
@@ -313,10 +296,6 @@ class GliphPlayerService : MediaLibraryService() {
     Log.d("GliphPlayer", "setupPlayer called with opts: $opts")
     options = opts
 
-    // ── Fix #5: Android-specific options (appKilledPlaybackBehavior, audioUsage,
-    // audioContentType) are applied HERE at setup time, not in updateOptions.
-    // This avoids Codegen type mismatches and ensures the ExoPlayer AudioAttributes
-    // are configured before the first track is loaded.
     val androidOpts = if (opts.hasKey("android")) opts.getMap("android") else null
     val audioUsageStr = getString(androidOpts, "audioUsage", null)
     val audioUsage = when (audioUsageStr) {
@@ -324,24 +303,22 @@ class GliphPlayerService : MediaLibraryService() {
       "alarm"              -> C.USAGE_ALARM
       "notification"       -> C.USAGE_NOTIFICATION
       "game"               -> C.USAGE_GAME
-      else                 -> C.USAGE_MEDIA  // default: music
+      else                 -> C.USAGE_MEDIA
     }
     val audioContentTypeStr = getString(androidOpts, "audioContentType", null)
     val audioContentType = when (audioContentTypeStr) {
       "speech"       -> C.AUDIO_CONTENT_TYPE_SPEECH
       "sonification" -> C.AUDIO_CONTENT_TYPE_SONIFICATION
       "movie"        -> C.AUDIO_CONTENT_TYPE_MOVIE
-      else           -> C.AUDIO_CONTENT_TYPE_MUSIC  // default
+      else           -> C.AUDIO_CONTENT_TYPE_MUSIC
     }
 
-    // Re-init player with the correct buffer settings and audio attributes
     if (::player.isInitialized) {
       player.release()
       mediaSession.release()
     }
     initPlayer(opts)
 
-    // Apply audio attributes after init (ExoPlayer allows this before first play)
     player.setAudioAttributes(
       AudioAttributes.Builder()
         .setUsage(audioUsage)
@@ -366,6 +343,38 @@ class GliphPlayerService : MediaLibraryService() {
     }
   }
 
+  // ── 🆕 HELPER: Отправка события об изменении активного трека ──────────────
+
+  private fun emitActiveTrackChanged(lastIndex: Int = -1) {
+    val newIndex = player.currentMediaItemIndex
+    val map = Arguments.createMap()
+    map.putInt("index", newIndex)
+    map.putInt("lastIndex", if (lastIndex >= 0) lastIndex else newIndex)
+    map.putDouble("lastPosition", player.currentPosition / 1000.0)
+
+    if (newIndex >= 0 && newIndex < queue.size) {
+      map.putMap("track", Arguments.makeNativeMap(queue[newIndex].toHashMap()))
+    } else {
+      map.putNull("track")
+    }
+
+    if (lastIndex >= 0 && lastIndex < queue.size) {
+      map.putMap("lastTrack", Arguments.makeNativeMap(queue[lastIndex].toHashMap()))
+    } else {
+      map.putNull("lastTrack")
+    }
+
+    eventEmitter?.invoke("playback-active-track-changed", map)
+  }
+
+  // ── 🆕 HELPER: Отправка состояния ──────────────────────────────────────────
+
+  private fun emitPlaybackState(state: String) {
+    val map = Arguments.createMap()
+    map.putString("state", state)
+    eventEmitter?.invoke("playback-state", map)
+  }
+
   // ── Queue management ────────────────────────────────────────────────────────
 
   fun add(tracks: ReadableArray, insertBeforeIndex: Int): Int {
@@ -375,11 +384,13 @@ class GliphPlayerService : MediaLibraryService() {
       insertBeforeIndex
     }
 
+    val wasEmpty = queue.isEmpty()  // ✅ Сохраняем состояние ДО добавления
     val mediaItems = mutableListOf<MediaItem>()
+
     for (i in 0 until tracks.size()) {
       val track = tracks.getMap(i) ?: continue
       Log.d("GliphPlayer", "Adding track: ${track.getString("title")} (URL: ${track.getString("url")})")
-      queue.add(startIndex + (i), track)
+      queue.add(startIndex + i, track)
       mediaItems.add(buildMediaItem(track))
     }
 
@@ -387,6 +398,11 @@ class GliphPlayerService : MediaLibraryService() {
       player.addMediaItems(mediaItems)
     } else {
       player.addMediaItems(insertBeforeIndex, mediaItems)
+    }
+
+    // ✅ Если очередь была пуста - отправляем событие
+    if (wasEmpty && queue.isNotEmpty()) {
+      emitActiveTrackChanged()
     }
 
     updateMediaNotification()
@@ -416,24 +432,42 @@ class GliphPlayerService : MediaLibraryService() {
     }
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлено событие
   fun skip(index: Int, initialPosition: Double) {
+    val lastIndex = player.currentMediaItemIndex
     player.seekTo(index, if (initialPosition >= 0) (initialPosition * 1000).toLong() else C.TIME_UNSET)
     player.play()
+
+    // ✅ Отправляем событие
+    emitActiveTrackChanged(lastIndex)
+    emitPlaybackState("playing")
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлено событие
   fun skipToNext(initialPosition: Double) {
     if (player.hasNextMediaItem()) {
+      val lastIndex = player.currentMediaItemIndex
       player.seekToNextMediaItem()
       if (initialPosition >= 0) player.seekTo((initialPosition * 1000).toLong())
       player.play()
+
+      // ✅ Отправляем событие
+      emitActiveTrackChanged(lastIndex)
+      emitPlaybackState("playing")
     }
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлено событие
   fun skipToPrevious(initialPosition: Double) {
     if (player.hasPreviousMediaItem()) {
+      val lastIndex = player.currentMediaItemIndex
       player.seekToPreviousMediaItem()
       if (initialPosition >= 0) player.seekTo((initialPosition * 1000).toLong())
       player.play()
+
+      // ✅ Отправляем событие
+      emitActiveTrackChanged(lastIndex)
+      emitPlaybackState("playing")
     }
   }
 
@@ -446,28 +480,61 @@ class GliphPlayerService : MediaLibraryService() {
 
   // ── Playback control ────────────────────────────────────────────────────────
 
+  // ✅ ИСПРАВЛЕНО: Добавлены события
   fun play() {
     if (player.playbackState == Player.STATE_IDLE) {
       player.prepare()
     }
     player.play()
+
+    // ✅ Отправляем состояние
+    emitPlaybackState("playing")
+
+    // ✅ Если есть активный трек - отправляем его
+    if (player.currentMediaItemIndex >= 0 && player.currentMediaItemIndex < queue.size) {
+      emitActiveTrackChanged()
+    }
+
     updateMediaNotification()
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлено событие
   fun pause() {
     player.pause()
+
+    // ✅ Отправляем состояние
+    emitPlaybackState("paused")
+
     updateMediaNotification()
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлено событие
   fun stop() {
     player.stop()
+
+    // ✅ Отправляем состояние
+    emitPlaybackState("stopped")
+
     updateMediaNotification()
   }
 
+  // ✅ ИСПРАВЛЕНО: Добавлены события
   fun reset() {
+    val lastIndex = player.currentMediaItemIndex
     player.stop()
     player.clearMediaItems()
     queue.clear()
+
+    // ✅ Отправляем событие об очистке
+    val map = Arguments.createMap()
+    map.putInt("index", -1)
+    map.putNull("track")
+    map.putInt("lastIndex", lastIndex)
+    map.putDouble("lastPosition", 0.0)
+    eventEmitter?.invoke("playback-active-track-changed", map)
+
+    emitPlaybackState("none")
+
     updateMediaNotification()
   }
 
@@ -577,10 +644,8 @@ class GliphPlayerService : MediaLibraryService() {
     if (index < 0 || index >= queue.size) return
     val existing = queue[index].toHashMap()
     metadata.toHashMap().forEach { (k, v) -> existing[k] = v }
-    // Rebuild the queue entry (ReadableMap is immutable, so we use a WritableMap)
     val updated = Arguments.makeNativeMap(existing)
     queue[index] = updated
-    // Update ExoPlayer media item metadata
     player.replaceMediaItem(index, buildMediaItem(updated))
     updateMediaNotification()
   }
@@ -598,7 +663,6 @@ class GliphPlayerService : MediaLibraryService() {
     val updated = Arguments.makeNativeMap(existing)
     queue[currentIndex] = updated
 
-    // Update the live MediaItem in the player
     val currentItem = player.currentMediaItem ?: return
     val newMetadata = currentItem.mediaMetadata.buildUpon()
       .also { builder ->
@@ -614,13 +678,11 @@ class GliphPlayerService : MediaLibraryService() {
   }
 
   fun updateOptions(opts: ReadableMap) {
-    // Merge new options with existing ones to avoid wiping out buffer settings
     val merged = Arguments.createMap()
     options?.let { merged.merge(it) }
     merged.merge(opts)
     options = merged
 
-    // Restart progress updates if the interval changed
     if (opts.hasKey("progressUpdateEventInterval")) {
       startProgressUpdates()
     }
@@ -676,7 +738,6 @@ class GliphPlayerService : MediaLibraryService() {
       .setMediaId(track.getString("id") ?: url)
       .setMediaMetadata(metadata)
       .also { builder ->
-        // Custom headers
         val headers = track.getMap("headers")
         if (headers != null) {
           val headersMap = headers.toHashMap().mapValues { it.value.toString() }
@@ -701,15 +762,16 @@ class GliphPlayerService : MediaLibraryService() {
     private var lastIndex = -1
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-      emitPlaybackState()
+      emitPlaybackState(mapPlayerState())
       updateMediaNotification()
+
       if (playbackState == Player.STATE_ENDED) {
-        // Emit track ended for the last item in the queue if it just finished
+        // ✅ Отправляем track-ended
         val map = Arguments.createMap()
         map.putInt("index", player.currentMediaItemIndex)
         eventEmitter?.invoke("playback-track-ended", map)
 
-        // Then emit queue ended
+        // ✅ Отправляем queue-ended
         val queueMap = Arguments.createMap()
         queueMap.putInt("index", player.currentMediaItemIndex)
         queueMap.putDouble("position", player.currentPosition / 1000.0)
@@ -718,13 +780,14 @@ class GliphPlayerService : MediaLibraryService() {
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-      emitPlaybackState()
+      emitPlaybackState(mapPlayerState())
       updateMediaNotification()
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-      // If we transitioned to a new item, the previous one "ended" its playback
-      if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+      // ✅ Отправляем track-ended для предыдущего трека
+      if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+          reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
         val endedMap = Arguments.createMap()
         endedMap.putInt("index", lastIndex)
         eventEmitter?.invoke("playback-track-ended", endedMap)
@@ -748,6 +811,7 @@ class GliphPlayerService : MediaLibraryService() {
         map.putNull("lastTrack")
       }
 
+      // ✅ Отправляем active-track-changed
       eventEmitter?.invoke("playback-active-track-changed", map)
       lastIndex = newIndex
       updateMediaNotification()
@@ -758,9 +822,8 @@ class GliphPlayerService : MediaLibraryService() {
       map.putString("code", "playback_error_${error.errorCode}")
       map.putString("message", error.message ?: "Unknown playback error")
       eventEmitter?.invoke("playback-error", map)
-      emitPlaybackState()
+      emitPlaybackState("error")
 
-      // Optional auto-skip recovery
       val autoSkip = options?.getMap("android")?.let { androidMap ->
           androidMap.hasKey("autoSkipOnError") && androidMap.getBoolean("autoSkipOnError")
       } ?: false
@@ -769,12 +832,6 @@ class GliphPlayerService : MediaLibraryService() {
         player.prepare()
         player.play()
       }
-    }
-
-    private fun emitPlaybackState() {
-      val map = Arguments.createMap()
-      map.putString("state", mapPlayerState())
-      eventEmitter?.invoke("playback-state", map)
     }
   }
 
@@ -787,7 +844,6 @@ class GliphPlayerService : MediaLibraryService() {
       controller: MediaSession.ControllerInfo,
       mediaItems: MutableList<MediaItem>
     ): com.google.common.util.concurrent.ListenableFuture<MutableList<MediaItem>> {
-      // Resolve URIs for Android Auto / external controllers
       val resolved = mediaItems.map { item ->
         item.buildUpon().setUri(item.requestMetadata.mediaUri).build()
       }.toMutableList()
