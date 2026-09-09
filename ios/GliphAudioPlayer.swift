@@ -162,6 +162,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   @objc public func skipToIndex(
     _ index: Int,
     initialPosition: Double,
+    autoPlay: Bool = true,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
@@ -176,7 +177,10 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     if initialPosition >= 0 {
       player?.seek(to: CMTime(seconds: initialPosition, preferredTimescale: 1000))
     }
-    player?.play()
+
+    if autoPlay {
+      player?.play()
+    }
 
     emitActiveTrackChanged(lastIndex: lastIndex)
 
@@ -185,6 +189,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   @objc public func skipToNext(
     initialPosition: Double,
+    autoPlay: Bool = true,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
@@ -192,11 +197,12 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     guard next < queue.count else {
       reject("skip_error", "No next track", nil); return
     }
-    skipToIndex(next, initialPosition: initialPosition, resolve: resolve, reject: reject)
+    skipToIndex(next, initialPosition: initialPosition, autoPlay: autoPlay, resolve: resolve, reject: reject)
   }
 
   @objc public func skipToPrevious(
     initialPosition: Double,
+    autoPlay: Bool = true,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
@@ -204,7 +210,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     guard prev >= 0 else {
       reject("skip_error", "No previous track", nil); return
     }
-    skipToIndex(prev, initialPosition: initialPosition, resolve: resolve, reject: reject)
+    skipToIndex(prev, initialPosition: initialPosition, autoPlay: autoPlay, resolve: resolve, reject: reject)
   }
 
   @objc public func moveFrom(
@@ -528,7 +534,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       guard let self = self else { return .commandFailed }
       let next = self.currentIndex + 1
       if next < self.queue.count {
-        self.skipToIndex(next, initialPosition: -1, resolve: { _ in }, reject: { _, _, _ in })
+        self.skipToIndex(next, initialPosition: -1, autoPlay: true, resolve: { _ in }, reject: { _, _, _ in })
       }
       self.eventEmitter("remote-next", nil)
       return .success
@@ -540,7 +546,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       guard let self = self else { return .commandFailed }
       let prev = self.currentIndex - 1
       if prev >= 0 {
-        self.skipToIndex(prev, initialPosition: -1, resolve: { _ in }, reject: { _, _, _ in })
+        self.skipToIndex(prev, initialPosition: -1, autoPlay: true, resolve: { _ in }, reject: { _, _, _ in })
       }
       self.eventEmitter("remote-previous", nil)
       return .success
@@ -633,7 +639,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     let nextIndex = currentIndex + 1
     let currentPosition = CMTimeGetSeconds(player?.currentTime() ?? .zero)
 
-    // ✅ 1. Отправляем событие окончания ТЕКУЩЕГО трека
     eventEmitter("playback-track-ended", [
       "index": currentIndex,
       "position": currentPosition

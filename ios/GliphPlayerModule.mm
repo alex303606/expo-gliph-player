@@ -96,21 +96,34 @@ RCT_EXPORT_METHOD(removeUpcomingTracks:(RCTPromiseResolveBlock)resolve
 
 RCT_EXPORT_METHOD(skip:(double)index
                   initialPosition:(double)initialPosition
+                  autoPlay:(BOOL)autoPlay
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
-  [_player skipToIndex:(NSInteger)index initialPosition:initialPosition resolve:resolve reject:reject];
+  [_player skipToIndex:(NSInteger)index
+       initialPosition:initialPosition
+              autoPlay:autoPlay
+               resolve:resolve
+                reject:reject];
 }
 
 RCT_EXPORT_METHOD(skipToNext:(double)initialPosition
+                  autoPlay:(BOOL)autoPlay
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
-  [_player skipToNextWithInitialPosition:initialPosition resolve:resolve reject:reject];
+  [_player skipToNextWithInitialPosition:initialPosition
+                                autoPlay:autoPlay
+                                 resolve:resolve
+                                  reject:reject];
 }
 
 RCT_EXPORT_METHOD(skipToPrevious:(double)initialPosition
+                  autoPlay:(BOOL)autoPlay
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
-  [_player skipToPreviousWithInitialPosition:initialPosition resolve:resolve reject:reject];
+  [_player skipToPreviousWithInitialPosition:initialPosition
+                                    autoPlay:autoPlay
+                                     resolve:resolve
+                                      reject:reject];
 }
 
 RCT_EXPORT_METHOD(move:(double)fromIndex

@@ -148,33 +148,40 @@ class GliphPlayerModule(
     }
   }
 
+    @ReactMethod
+    override fun skip(index: Double, initialPosition: Double, autoPlay: Boolean, promise: Promise) {
+        scope.launch {
+            try {
+                val pos = if (initialPosition < 0) -1.0 else initialPosition
+                playerService?.skip(index.toInt(), pos, autoPlay)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("skip_error", e.message, e)
+            }
+        }
+    }
+
   @ReactMethod
-  override fun skip(index: Double, initialPosition: Double, promise: Promise) {
+  override fun skipToNext(initialPosition: Double, autoPlay: Boolean, promise: Promise) {
     scope.launch {
       try {
-        playerService?.skip(index.toInt(), if (initialPosition < 0) -1.0 else initialPosition)
+        playerService?.skipToNext(if (initialPosition < 0) -1.0 else initialPosition, autoPlay)
         promise.resolve(null)
-      } catch (e: Exception) { promise.reject("skip_error", e.message, e) }
+      } catch (e: Exception) {
+        promise.reject("skip_error", e.message, e)
+      }
     }
   }
 
   @ReactMethod
-  override fun skipToNext(initialPosition: Double, promise: Promise) {
+  override fun skipToPrevious(initialPosition: Double, autoPlay: Boolean, promise: Promise) {
     scope.launch {
       try {
-        playerService?.skipToNext(if (initialPosition < 0) -1.0 else initialPosition)
+        playerService?.skipToPrevious(if (initialPosition < 0) -1.0 else initialPosition, autoPlay)
         promise.resolve(null)
-      } catch (e: Exception) { promise.reject("skip_error", e.message, e) }
-    }
-  }
-
-  @ReactMethod
-  override fun skipToPrevious(initialPosition: Double, promise: Promise) {
-    scope.launch {
-      try {
-        playerService?.skipToPrevious(if (initialPosition < 0) -1.0 else initialPosition)
-        promise.resolve(null)
-      } catch (e: Exception) { promise.reject("skip_error", e.message, e) }
+      } catch (e: Exception) {
+        promise.reject("skip_error", e.message, e)
+      }
     }
   }
 
