@@ -22,7 +22,7 @@ RCT_EXPORT_MODULE(RNGliphPlayer)
   if (self = [super init]) {
     __weak GliphPlayerModule *weakSelf = self;
     _player = [[GliphAudioPlayer alloc] initWithEventEmitter:^(NSString *event, NSDictionary *data) {
-      [weakSelf sendEventWithName:event body:data];
+      [weakSelf safeSendEventWithName:event body:data];
     }];
   }
   return self;
@@ -61,6 +61,13 @@ RCT_EXPORT_MODULE(RNGliphPlayer)
 
 - (void)startObserving { _hasListeners = YES; }
 - (void)stopObserving  { _hasListeners = NO; }
+
+- (void)safeSendEventWithName:(NSString *)eventName body:(id)body {
+  if (!_hasListeners) {
+    return;
+  }
+  [self sendEventWithName:eventName body:body];
+}
 
 RCT_EXPORT_METHOD(setupPlayer:(NSDictionary *)options
                   resolve:(RCTPromiseResolveBlock)resolve
@@ -245,8 +252,6 @@ RCT_EXPORT_METHOD(updateOptions:(NSDictionary *)options
                   reject:(RCTPromiseRejectBlock)reject) {
   [_player updateOptions:options resolve:resolve reject:reject];
 }
-
-// ── New Architecture (TurboModule) ────────────────────────────────────────────
 
 #ifdef RCT_NEW_ARCH_ENABLED
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
