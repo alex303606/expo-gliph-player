@@ -41,6 +41,7 @@ RCT_EXPORT_MODULE(RNGliphPlayer)
     @"playback-queue-ended",
     @"playback-progress-updated",
     @"playback-metadata-received",
+    @"playback-repeat-mode-changed",
     @"remote-play",
     @"remote-pause",
     @"remote-stop",

@@ -20,11 +20,15 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
   private var playerItems: [AVPlayerItem] = []
   private var queue: [[String: Any]] = []
   private var currentIndex: Int = -1
-  private var repeatMode: Int = 0
+  private var repeatMode: Int = 0  // 0=off, 1=track, 2=queue
   private var isSetup = false
   private var progressTimer: Timer?
   private var progressInterval: TimeInterval = 1.0
   private var options: [String: Any] = [:]
+
+  // ✅ AVPlayerLooper для повтора трека
+  private var playerLooper: AVPlayerLooper?
+  private var templateItem: AVPlayerItem?
 
   private let eventEmitter: EventEmitter
   private var timeObserver: Any?
@@ -260,6 +264,12 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   @objc public func reset(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     player?.pause()
+
+    // ✅ Уничтожаем looper
+    playerLooper?.disableLooping()
+    playerLooper = nil
+    templateItem = nil
+
     player?.removeAllItems()
     queue.removeAll()
     playerItems.removeAll()
@@ -304,8 +314,23 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
 
   @objc public func getRate() -> Float { return player?.rate ?? 1.0 }
 
+  // ✅ ИСПРАВЛЕНО: пересоздаём очередь при смене режима
   @objc public func setRepeatMode(_ mode: Int, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    let oldMode = repeatMode
     repeatMode = mode
+
+    // ✅ Пересоздаём очередь с учётом нового режима
+    if oldMode != mode {
+      let wasPlaying = player?.timeControlStatus == .playing
+      rebuildPlayerQueue()
+      if wasPlaying {
+        player?.play()
+      }
+    }
+
+    // ✅ Отправляем событие
+    eventEmitter("playback-repeat-mode-changed", ["mode": mode])
+
     resolve(nil)
   }
 
@@ -420,12 +445,40 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     ])
   }
 
+  // ✅ ИСПРАВЛЕНО: добавлен AVPlayerLooper для повторения трека
   private func rebuildPlayerQueue() {
     guard let player = player else { return }
+
+    // ✅ Уничтожаем старый looper
+    playerLooper?.disableLooping()
+    playerLooper = nil
+    templateItem = nil
+
     player.removeAllItems()
     playerItems.removeAll()
 
     let startIndex = max(0, currentIndex)
+
+    // ✅ РЕЖИМ ПОВТОРА ТРЕКА (RepeatMode.Track = 1)
+    if repeatMode == 1 && startIndex < queue.count {
+      let track = queue[startIndex]
+      guard let urlString = track["url"] as? String,
+            let url = URL(string: urlString) else { return }
+
+      // ✅ Создаём template item
+      let item = AVPlayerItem(url: url)
+      templateItem = item
+      playerItems.append(item)
+
+      // ✅ Создаём looper для бесконечного повтора
+      playerLooper = AVPlayerLooper(player: player, templateItem: item)
+
+      currentIndex = startIndex
+      updateNowPlayingInfo()
+      return
+    }
+
+    // ✅ ОБЫЧНАЯ ОЧЕРЕДЬ (RepeatMode.Off / RepeatMode.Queue)
     for i in startIndex..<queue.count {
       let track = queue[i]
       guard let urlString = track["url"] as? String,
@@ -632,9 +685,15 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
     }
   }
 
+  // ✅ ИСПРАВЛЕНО: AVPlayerLooper сам обрабатывает повтор трека
   @objc private func playerItemDidFinish(_ notification: Notification) {
     guard let finishedItem = notification.object as? AVPlayerItem,
           finishedItem === player?.currentItem else { return }
+
+    // ✅ Если режим повтора трека - AVPlayerLooper сам обрабатывает, выходим
+    if repeatMode == 1 {
+      return
+    }
 
     let nextIndex = currentIndex + 1
     let currentPosition = CMTimeGetSeconds(player?.currentTime() ?? .zero)
@@ -643,12 +702,6 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
       "index": currentIndex,
       "position": currentPosition
     ])
-
-    if repeatMode == 1 {
-      player?.seek(to: .zero)
-      player?.play()
-      return
-    }
 
     if nextIndex < queue.count {
       currentIndex = nextIndex
@@ -660,6 +713,7 @@ public typealias RCTPromiseRejectBlock = (String?, String?, Error?) -> Void
         "lastPosition": 0.0,
       ])
     } else if repeatMode == 2 {
+      // ✅ ПОВТОР ВСЕЙ ОЧЕРЕДИ
       currentIndex = 0
       rebuildPlayerQueue()
       player?.play()
